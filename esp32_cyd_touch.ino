@@ -286,19 +286,19 @@ void resolveDeviceNames() {
     tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, filledW, 8, 4, 0x00E5FF);
     
     // Create client and connect (try public, then random)
-    NimBLEClient* pClient = BLEDevice::createClient();
+    BLEClient* pClient = BLEDevice::createClient();
     if (!pClient) {
       Serial.print("[BLE] Failed to create client for: ");
       Serial.println(devices[i].macAddress);
       continue;
     }
     
-    NimBLEAddress addr(devices[i].macAddress.c_str(), BLE_ADDR_PUBLIC);
+    BLEAddress addr(devices[i].macAddress.c_str(), BLE_ADDR_PUBLIC);
     bool connected = pClient->connect(addr, false, false, false);
     
     if (!connected) {
       // Try random address type
-      NimBLEAddress addrRandom(devices[i].macAddress.c_str(), BLE_ADDR_RANDOM);
+      BLEAddress addrRandom(devices[i].macAddress.c_str(), BLE_ADDR_RANDOM);
       connected = pClient->connect(addrRandom, false, false, false);
     }
     
@@ -311,11 +311,11 @@ void resolveDeviceNames() {
     }
     
     // Find GAP service (0x1800) and Device Name characteristic (0x2A00)
-    NimBLERemoteService* pSvc = pClient->getService(NimBLEUUID("0x1800"));
+    BLERemoteService* pSvc = pClient->getService(BLEUUID("0x1800"));
     if (pSvc) {
-      NimBLERemoteCharacteristic* pChar = pSvc->getCharacteristic(NimBLEUUID("0x2A00"));
+      BLERemoteCharacteristic* pChar = pSvc->getCharacteristic(BLEUUID("0x2A00"));
       if (pChar && pChar->canRead()) {
-        NimBLEAttValue value = pChar->readValue();
+        BLEAttValue value = pChar->readValue();
         if (value.size() > 0) {
           std::string nameStr(reinterpret_cast<const char*>(value.data()), value.size());
           String newName = String(nameStr.c_str());

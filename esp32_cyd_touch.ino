@@ -441,81 +441,90 @@ void drawBtDevice(int index) {
   tft.setTextColor(0xFFFFFF);
   tft.setTextDatum(TC_DATUM);
   
-  // Header with device name
-  tft.setTextSize(2);
+  // Header bar
+  tft.fillRect(0, 0, SCREEN_WIDTH, 30, 0x00E5FF);
+  tft.setTextColor(0x000000);
   String name = devices[index].name;
-  if (name.length() > 15) name = name.substring(0, 15) + "...";
+  if (name.length() > 18) name = name.substring(0, 18) + "..";
   if (name.length() == 0) name = "Unknown Device";
-  tft.drawCentreString(name, SCREEN_WIDTH/2, 10, 2);
+  tft.drawCentreString(name, SCREEN_WIDTH/2, 8, 2);
+  
+  // Back button
+  tft.fillRoundRect(5, 35, 50, 30, 5, 0x404040);
+  tft.setTextColor(0xFFFFFF);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawCentreString("< Back", 30, 50, 2);
+  
+  // MAC address (below back button)
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(0xAAAAAA);
+  String mac = devices[index].macAddress;
+  if (mac.length() > 24) mac = mac.substring(0, 24);
+  tft.drawString("MAC: " + mac, 15, 72, 2);
   
   // Divider
-  tft.drawLine(10, 35, SCREEN_WIDTH - 10, 35, 0xFFFFFF);
+  tft.drawLine(10, 90, SCREEN_WIDTH - 10, 90, 0x404040);
   
-  // Device details
-  int y = 50;
-  int lineH = 18;
-  
-  // MAC
-  tft.drawString("MAC:  ", 15, y, 2);
-  tft.drawCentreString(devices[index].macAddress, SCREEN_WIDTH - 15, y, 2);
-  y += lineH;
-  
-  // RSSI with bar
-  tft.drawString("RSSI: ", 15, y, 2);
+  // RSSI display
+  int y = 110;
+  int lineH = 20;
   int rssiVal = devices[index].rssi;
-  tft.drawString(String(rssiVal) + " dBm", SCREEN_WIDTH - 120, y, 2);
   
-  // RSSI bar indicator
-  int barX = SCREEN_WIDTH - 110;
-  int barY = y + 2;
-  int barW = 60;
-  int barH = 10;
-  int filledW = map(abs(rssiVal), 30, 90, 0, barW);
-  tft.fillRoundRect(barX, barY, barW, barH, 2, 0x404040);
-  tft.fillRoundRect(barX, barY, filledW, barH, 2, 0x00E5FF);
-  y += lineH;
+  tft.setTextColor(0xFFFFFF);
+  tft.drawString("RSSI:", 15, y, 2);
+  tft.drawCentreString(String(rssiVal) + " dBm", SCREEN_WIDTH/2, y, 2);
   
-  // Manufacturer
-  tft.drawString("Manufacturer: ", 15, y, 2);
-  String mfr = devices[index].manufacturer;
-  if (mfr.length() > 12) mfr = mfr.substring(0, 12) + "...";
-  tft.drawString(mfr, 170, y, 2);
-  y += lineH;
+  // RSSI bar
+  int rssiAbs = abs(rssiVal);
+  int barW = 220;
+  int filledW = map(rssiAbs, 30, 90, 0, barW);
+  tft.fillRoundRect(15, y + 18, barW, 8, 4, 0x303030);
+  tft.fillRoundRect(15, y + 18, filledW, 8, 4, 0x00E5FF);
+  y += 45;
   
-  // Mfr ID
-  tft.drawString("ID: ", 15, y, 2);
-  tft.drawString(devices[index].manufacturerId, SCREEN_WIDTH - 15, y, 2);
-  y += lineH;
+  // Manufacturer (if known)
+  if (devices[index].manufacturer.length() > 0) {
+    tft.drawString("Manufacturer:", 15, y, 2);
+    String mfr = devices[index].manufacturer;
+    if (mfr.length() > 18) mfr = mfr.substring(0, 18);
+    tft.drawCentreString(mfr, SCREEN_WIDTH/2, y, 2);
+    y += lineH;
+  }
   
-  // Service UUIDs
+  // Mfr ID (if known)
+  if (devices[index].manufacturerId.length() > 0) {
+    tft.drawString("Mfr ID:", 15, y, 2);
+    tft.drawCentreString(devices[index].manufacturerId, SCREEN_WIDTH/2, y, 2);
+    y += lineH;
+  }
+  
+  // Service UUIDs (if known)
   if (devices[index].serviceUuids.length() > 0) {
-    tft.drawString("UUIDs: ", 15, y, 2);
+    tft.drawString("UUIDs:", 15, y, 2);
     String uuids = devices[index].serviceUuids;
-    if (uuids.length() > 15) uuids = uuids.substring(0, 15) + "...";
-    tft.drawString(uuids, 100, y, 2);
+    if (uuids.length() > 18) uuids = uuids.substring(0, 18) + "..";
+    tft.drawCentreString(uuids, SCREEN_WIDTH/2, y, 2);
     y += lineH;
   }
   
-  // TX Power
+  // TX Power (if known)
   if (devices[index].txPower.length() > 0) {
-    tft.drawString("TX Power: ", 15, y, 2);
-    tft.drawString(devices[index].txPower + " dBm", SCREEN_WIDTH - 15, y, 2);
+    tft.drawString("TX Power:", 15, y, 2);
+    tft.drawCentreString(devices[index].txPower + " dBm", SCREEN_WIDTH/2, y, 2);
     y += lineH;
   }
   
-  // Navigation bar
+  // Page indicator (bottom bar)
   tft.fillRoundRect(0, SCREEN_HEIGHT - 45, SCREEN_WIDTH, 45, 5, 0x202020);
+  tft.setTextColor(0x808080);
+  tft.drawCentreString(String(index + 1) + "/" + String(deviceCount), SCREEN_WIDTH/2, SCREEN_HEIGHT - 22, 1);
   
-  // Previous button
+  // Prev button
   bool canPrev = index > 0;
   int prevX = 10;
   tft.fillRoundRect(prevX, SCREEN_HEIGHT - 40, 70, 35, 5, canPrev ? 0x404040 : 0x202020);
   tft.setTextColor(canPrev ? 0xFFFFFF : 0x808080);
   tft.drawCentreString("< Prev", prevX + 35, SCREEN_HEIGHT - 22, 2);
-  
-  // Page indicator
-  tft.setTextColor(0xFFFFFF);
-  tft.drawCentreString(String(index + 1) + "/" + String(deviceCount), SCREEN_WIDTH/2, SCREEN_HEIGHT - 22, 2);
   
   // Next button
   bool canNext = index < deviceCount - 1;
@@ -725,6 +734,13 @@ void loop() {
           }
           
           case BT_SHOWING_DEVICE: {
+            // Check back button (top-left, below header)
+            if (isTouchOnBackButton(tx, ty)) {
+              btState = BT_SHOWING_RESULTS;
+              drawBtResults();
+              break;
+            }
+            
             // Check prev button
             if (currentDeviceIndex > 0 && tx >= 10 && tx <= 80 && 
                 ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {

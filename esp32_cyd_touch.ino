@@ -175,9 +175,7 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     Serial.print(" name=\"");
     Serial.print(name);
     Serial.print("\" rssi=");
-    Serial.print(advertisedDevice.getRSSI());
-    Serial.print(" isRsp=");
-    Serial.println(advertisedDevice.isAdvertisement());
+    Serial.println(advertisedDevice.getRSSI());
     
     // Find or add device (dedup by MAC)
     bool found = false;

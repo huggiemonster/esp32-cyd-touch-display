@@ -104,8 +104,8 @@ void drawMenuIcon(int index, int cx, int cy, bool highlighted) {
       int s = iconSize / 2;
       
       // Draw vertical line
-      tft.drawLine(cx, cy - s, cx, cy - s/2, color, 3);
-      tft.drawLine(cx, cy + s/2, cx, cy + s, color, 3);
+      tft.drawLine(cx, cy - s, cx, cy - s/2, color);
+      tft.drawLine(cx, cy + s/2, cx, cy + s, color);
       
       // Draw upper triangle (pointing up-right)
       tft.fillTriangle(cx - 5, cy - s, cx + s, cy, cx - 5, cy, color);
@@ -153,7 +153,7 @@ void drawMenuIcon(int index, int cx, int cy, bool highlighted) {
         int y1 = cy + (int)(r * 1.2 * sin(angle));
         int x2 = cx + (int)(r * 1.5 * cos(angle));
         int y2 = cy + (int)(r * 1.5 * sin(angle));
-        tft.drawLine(x1, y1, x2, y2, color, 3);
+        tft.drawLine(x1, y1, x2, y2, color);
       }
       
       // Center hole

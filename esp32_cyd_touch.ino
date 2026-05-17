@@ -285,7 +285,7 @@ void resolveDeviceNames() {
     tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, barW, 8, 4, 0x303030);
     tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, filledW, 8, 4, 0x00E5FF);
     
-    // Create client and connect (try public, then random)
+     // Create client and connect
     BLEClient* pClient = BLEDevice::createClient();
     if (!pClient) {
       Serial.print("[BLE] Failed to create client for: ");
@@ -293,19 +293,19 @@ void resolveDeviceNames() {
       continue;
     }
     
-    BLEAddress addr(devices[i].macAddress.c_str(), BLE_ADDR_PUBLIC);
-    bool connected = pClient->connect(addr, false, false, false);
+    // connect(address, type, timeoutMS) - 3 args, not 4
+    bool connected = pClient->connect(addr, BLE_ADDR_TYPE_PUBLIC, 5000);
     
     if (!connected) {
       // Try random address type
-      BLEAddress addrRandom(devices[i].macAddress.c_str(), BLE_ADDR_RANDOM);
-      connected = pClient->connect(addrRandom, false, false, false);
+      BLEAddress addrRandom(devices[i].macAddress.c_str(), BLE_ADDR_TYPE_RANDOM);
+      connected = pClient->connect(addrRandom, BLE_ADDR_TYPE_RANDOM, 5000);
     }
     
     if (!connected) {
       Serial.print("[BLE] Connect failed: ");
       Serial.println(devices[i].macAddress);
-      BLEDevice::deleteClient(pClient);
+      // No deleteClient in ESP32 BLE lib - auto-cleanup on disconnect
       delay(200);
       continue;
     }
@@ -315,13 +315,12 @@ void resolveDeviceNames() {
     if (pSvc) {
       BLERemoteCharacteristic* pChar = pSvc->getCharacteristic(BLEUUID("0x2A00"));
       if (pChar && pChar->canRead()) {
-        BLEAttValue value = pChar->readValue();
-        if (value.size() > 0) {
-          std::string nameStr(reinterpret_cast<const char*>(value.data()), value.size());
-          String newName = String(nameStr.c_str());
+        // readValue() returns String, not BLEAttValue
+        String nameStr = pChar->readValue();
+        if (nameStr.length() > 0) {
           Serial.print("[BLE] CONNECT RESOLVED: ");
-          Serial.println(newName);
-          devices[i].name = newName;
+          Serial.println(nameStr);
+          devices[i].name = nameStr;
           resolved++;
         }
       }
@@ -329,7 +328,6 @@ void resolveDeviceNames() {
     
     // Disconnect and cleanup
     pClient->disconnect();
-    BLEDevice::deleteClient(pClient);
     delay(200);
   }
   

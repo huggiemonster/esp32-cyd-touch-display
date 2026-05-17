@@ -49,6 +49,7 @@ enum BtScanState {
   BT_IDLE = 0,
   BT_READY,          // Scanner screen ready, waiting for user to press Start
   BT_SCANNING,
+  BT_RESOLVING,      // Connecting to devices to resolve names
   BT_SHOWING_RESULTS,
   BT_SHOWING_DEVICE
 };
@@ -224,19 +225,113 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 };
 
 // ===== Post-Scan Name Resolution =====
-// Many BLE devices only broadcast their name in SCAN_RSP, which arrives
-// separately from the initial advertising packet. We do a second passive
-// scan (1s) focused on known devices to resolve their names.
+// Phase 1: Passive SCAN_RSP scan for names in scan response packets
+// Phase 2: Connect to "Unknown" devices to read their GAP Device Name
+
 void resolveDeviceNames() {
+  // Phase 1: Passive SCAN_RSP scan
   Serial.println("[BLE] Starting name resolve scan...");
   BLEScan* pScan = BLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setActiveScan(true);
   pScan->setInterval(100);
   pScan->setWindow(99);
-  pScan->start(1, false);  // 1 second active scan, auto-stops
-  delay(1100);              // Wait for scan to complete
-  Serial.println("[BLE] Resolve scan complete");
+  pScan->start(1, false);
+  delay(1100);
+  pScan->stop();
+  Serial.println("[BLE] Passive scan complete");
+  
+  // Count unknown devices
+  int unknownCount = 0;
+  for (int i = 0; i < deviceCount; i++) {
+    if (devices[i].name == "Unknown") {
+      unknownCount++;
+    }
+  }
+  
+  if (unknownCount == 0) return;
+  
+  // Phase 2: Connect to each unknown device to resolve its name
+  btState = BT_RESOLVING;
+  int resolved = 0;
+  int attempts = 0;
+  int maxResolve = min(unknownCount, 10);  // Limit to 10 devices
+  
+  Serial.print("[BLE] Connecting to ");
+  Serial.print(maxResolve);
+  Serial.println(" device(s) to resolve names...");
+  
+  for (int i = 0; i < deviceCount && attempts < maxResolve; i++) {
+    if (devices[i].name != "Unknown") continue;
+    
+    attempts++;
+    
+    // Show progress
+    tft.fillScreen(0x000000);
+    tft.setTextColor(0xFFFFFF);
+    tft.setTextDatum(TC_DATUM);
+    tft.drawCentreString("Resolving names...", SCREEN_WIDTH/2, 60, 2);
+    tft.setTextColor(0x00E5FF);
+    String progress = String(attempts) + "/" + String(maxResolve);
+    tft.drawCentreString(progress, SCREEN_WIDTH/2, 90, 2);
+    tft.setTextColor(0xAAAAAA);
+    String macLabel = devices[i].macAddress;
+    if (macLabel.length() > 17) macLabel = macLabel.substring(0, 17) + "..";
+    tft.drawCentreString(macLabel, SCREEN_WIDTH/2, 120, 1);
+    
+    // Draw progress bar
+    int barW = 200;
+    int filledW = map(attempts, 1, maxResolve, 0, barW);
+    tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, barW, 8, 4, 0x303030);
+    tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, filledW, 8, 4, 0x00E5FF);
+    
+    // Create client and connect
+    NimBLEClient* pClient = BLEDevice::createClient();
+    if (!pClient) {
+      Serial.print("[BLE] Failed to create client for: ");
+      Serial.println(devices[i].macAddress);
+      continue;
+    }
+    
+    NimBLEAddress addr(devices[i].macAddress.c_str());
+    bool connected = pClient->connect(addr, false, false, false);
+    
+    if (!connected) {
+      Serial.print("[BLE] Connect failed: ");
+      Serial.println(devices[i].macAddress);
+      BLEDevice::deleteClient(pClient);
+      delay(200);
+      continue;
+    }
+    
+    // Find GAP service (0x1800) and Device Name characteristic (0x2A00)
+    NimBLERemoteService* pSvc = pClient->getService(NimBLEUUID("0x1800"));
+    if (pSvc) {
+      NimBLERemoteCharacteristic* pChar = pSvc->getCharacteristic(NimBLEUUID("0x2A00"));
+      if (pChar && pChar->canRead()) {
+        std::string nameStr = pChar->getValue();
+        if (nameStr.length() > 0) {
+          String newName = String(nameStr.c_str());
+          Serial.print("[BLE] CONNECT RESOLVED: ");
+          Serial.println(newName);
+          devices[i].name = newName;
+          resolved++;
+        }
+      }
+    }
+    
+    // Disconnect and cleanup
+    pClient->disconnect();
+    BLEDevice::deleteClient(pClient);
+    delay(200);
+  }
+  
+  Serial.print("[BLE] Resolved ");
+  Serial.print(resolved);
+  Serial.println(" device name(s) via connection");
+  
+  // Update display
+  btState = BT_SHOWING_RESULTS;
 }
 
 // ===== UI Drawing Functions =====
@@ -682,6 +777,16 @@ void loop() {
   int tx, ty;
   
   if (getTouchCoords(tx, ty)) {
+    // Skip touch handling during name resolution (blocking operation)
+    if (btState == BT_RESOLVING) {
+      while (touchscreen.touched()) {
+        touchscreen.getPoint();
+        delay(10);
+      }
+      delay(200);
+      return;
+    }
+    
     Serial.print("Touch: ");
     Serial.print(tx);
     Serial.print(", ");

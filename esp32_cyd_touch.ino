@@ -167,6 +167,18 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     String name = advertisedDevice.getName();
     if (name.length() == 0) name = "Unknown";
     
+    // Serial debug
+    Serial.print("[BLE] ");
+    Serial.print(isResolving ? "RESOLVE" : "SCAN");
+    Serial.print(" ");
+    Serial.print(mac);
+    Serial.print(" name=\"");
+    Serial.print(name);
+    Serial.print("\" rssi=");
+    Serial.print(advertisedDevice.getRSSI());
+    Serial.print(" isRsp=");
+    Serial.println(advertisedDevice.isAdvertisement());
+    
     // Find or add device (dedup by MAC)
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
@@ -180,6 +192,15 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         // If this device had no name yet, take the name from this packet
         // SCAN_RSP packets often carry the name when the initial advertising packet doesn't
         if (name != "Unknown" && devices[i].name == "Unknown") {
+          Serial.print("[BLE] NAME RESOLVED: ");
+          Serial.println(name);
+          devices[i].name = name;
+        } else if (name != "Unknown" && devices[i].name != "Unknown") {
+          // Update with potentially better name if different
+          Serial.print("[BLE] NAME UPDATE: ");
+          Serial.print(devices[i].name);
+          Serial.print(" -> ");
+          Serial.println(name);
           devices[i].name = name;
         }
         break;
@@ -196,7 +217,9 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       devices[deviceCount].txPower = "";
       devices[deviceCount].appearance = "";
       devices[deviceCount].advInterval = "";
-     devices[deviceCount].hasScanRsp = false;
+      devices[deviceCount].hasScanRsp = false;
+      Serial.print("[BLE] NEW: ");
+      Serial.println(name);
       deviceCount++;
     }
   }
@@ -207,12 +230,14 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 // separately from the initial advertising packet. We do a second passive
 // scan (1s) focused on known devices to resolve their names.
 void resolveDeviceNames() {
+  Serial.println("[BLE] Starting name resolve scan...");
   BLEScan* pScan = BLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setActiveScan(true);
   pScan->setInterval(100);
   pScan->setWindow(99);
   pScan->start(1, false);  // 1 second focused scan
+  Serial.println("[BLE] Resolve scan complete");
   pScan->stop();
 }
 
@@ -572,6 +597,20 @@ void requestScanRsp() {
 void showBtResults() {
   // Resolve device names from SCAN_RSP (many devices only broadcast name here)
   resolveDeviceNames();
+  
+  Serial.println("[BLE] === Scan complete ===");
+  Serial.print("[BLE] Total devices: ");
+  Serial.println(deviceCount);
+  for (int i = 0; i < deviceCount; i++) {
+    Serial.print("[BLE] ");
+    Serial.print(i);
+    Serial.print(": \"");
+    Serial.print(devices[i].name);
+    Serial.print("\" ");
+    Serial.print(devices[i].macAddress);
+    Serial.print(" rssi=");
+    Serial.println(devices[i].rssi);
+  }
   
   // Sort devices by RSSI (strongest first = most negative RSSI values first)
   for (int i = 0; i < deviceCount - 1; i++) {

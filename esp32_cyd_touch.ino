@@ -81,7 +81,8 @@ struct ManufacturerInfo {
   const char* name;
 };
 
-ManufacturerInfo manufacturers[] = {
+#define MANUFACTURER_COUNT 800
+ManufacturerInfo manufacturers[MANUFACTURER_COUNT] = {
   {0x0001, "Ericsson Technology Licensing"},
   {0x0002, "Nokia Mobile Phones"},
   {0x0003, "Intel Corp."},
@@ -1107,7 +1108,7 @@ ManufacturerInfo manufacturers[] = {
   {0x03FF, "SimpliSafe"}
 };
 
-#define MANUFACTURER_COUNT (sizeof(manufacturers) / sizeof(manufacturers[0]))
+#define MANUFACTURER_COUNT (800)
 
 // ===== BLE Callbacks =====
 class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {

@@ -146,8 +146,18 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     // Check if we already have MAX_DEVICES
     if (deviceCount >= MAX_DEVICES) return;
     
-    // Get MAC address
+    // Get MAC address (normalize format to "XX:XX:XX:XX:XX:XX")
     String mac = advertisedDevice.getAddress().toString();
+    // Ensure consistent format
+    if (mac.length() == 12) {
+      // Convert "AABBCCDDEEFF" to "AA:BB:CC:DD:EE:FF"
+      String normalized = "";
+      for (int i = 0; i < 12; i += 2) {
+        if (i > 0) normalized += ":";
+        normalized += mac.substring(i, i+2);
+      }
+      mac = normalized;
+    }
     
     // Get name (default to "Unknown" if empty)
     String name = advertisedDevice.getName();
@@ -156,16 +166,41 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     // Get RSSI
     int rssi = advertisedDevice.getRSSI();
     
-    // Find or add device
+    // Get manufacturer data safely (extract ID only, don't store raw data)
+    String mfrData = advertisedDevice.getManufacturerData();
+    String manufacturer = "Unknown";
+    String mfrId = "N/A";
+    if (mfrData.length() >= 2) {
+      // Extract first 2 bytes as manufacturer ID (little-endian)
+      uint16_t id = (uint8_t)mfrData[1] | ((uint8_t)mfrData[0] << 8);
+      mfrId = "0x" + String(id, HEX);
+      
+      // Lookup manufacturer name from table
+      for (int i = 0; i < MANUFACTURER_COUNT; i++) {
+        if (manufacturers[i].id == id) {
+          manufacturer = manufacturers[i].name;
+          break;
+        }
+      }
+    }
+    
+    // Find or add device (dedup by MAC)
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
       if (devices[i].macAddress == mac) {
         found = true;
-        if (rssi > devices[i].rssi) {
+        // Update with stronger RSSI (more negative is stronger, so use <)
+        if (rssi < devices[i].rssi) {
           devices[i].rssi = rssi;
         }
+        // Update name if we got one
         if (name != "Unknown" && devices[i].name == "Unknown") {
           devices[i].name = name;
+        }
+        // Update manufacturer info
+        if (mfrId != "N/A") {
+          devices[i].manufacturerId = mfrId;
+          devices[i].manufacturer = manufacturer;
         }
         break;
       }
@@ -175,8 +210,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       devices[deviceCount].name = name;
       devices[deviceCount].macAddress = mac;
       devices[deviceCount].rssi = rssi;
-      devices[deviceCount].manufacturer = "Unknown";
-      devices[deviceCount].manufacturerId = "N/A";
+      devices[deviceCount].manufacturer = manufacturer;
+      devices[deviceCount].manufacturerId = mfrId;
       devices[deviceCount].serviceUuids = "";
       devices[deviceCount].txPower = "";
       devices[deviceCount].appearance = "";
@@ -336,8 +371,8 @@ void drawBtScanning() {
   tft.setTextColor(0xFFFFFF);
   tft.setTextDatum(TC_DATUM);
   tft.drawCentreString("Scanning...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, 2);
-  tft.drawCentreString("Tap to stop", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, 2);
-  tft.drawCentreString(String(deviceCount) + " devices found", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40, 2);
+  tft.drawCentreString(String(deviceCount) + " devices found", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, 2);
+  tft.drawCentreString("Tap to stop", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 30, 2);
   drawBackButton();
 }
 
@@ -352,37 +387,50 @@ void drawBtResults() {
   
   if (deviceCount == 0) {
     tft.drawCentreString("No devices found.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 10, 2);
-    tft.drawCentreString("Try again later.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 15, 2);
+    tft.drawCentreString("Try again later.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, 2);
   } else {
-    // Draw device list (scrollable)
-    int startY = 45;
-    int lineHeight = 20;
-    int visibleLines = (SCREEN_HEIGHT - startY - 60) / lineHeight;
+    // Draw device list with name, MAC, manufacturer + RSSI info
+    int startY = 40;
+    int lineHeight = 22;
+    int visibleLines = (SCREEN_HEIGHT - startY - 55) / lineHeight;
     
     for (int i = 0; i < deviceCount && i < visibleLines; i++) {
       int y = startY + i * lineHeight;
       
-      // Device name
+      // Device name (top line)
       String name = devices[i].name;
-      if (name.length() > 20) name = name.substring(0, 20) + "...";
-      if (name.length() == 0 || name == "Unknown Device" || name == "Unknown") {
+      if (name.length() == 0 || name == "Unknown" || name == "Unknown Device") {
         name = "Unknown";
+      } else if (name.length() > 18) {
+        name = name.substring(0, 18);
+      }
+      
+      // MAC address + manufacturer (bottom line)
+      String mac = devices[i].macAddress;
+      if (mac.length() > 12) {
+        mac = mac.substring(mac.length() - 12);  // Show last 12 chars (xx:xx:xx)
+      }
+      String mfr = devices[i].manufacturerId;
+      if (mfr != "N/A" && mfr != "") {
+        mfr = mfr.substring(4);  // Remove "0x" prefix
       }
       
       tft.setTextDatum(ML_DATUM);
-      tft.drawString(String(i + 1) + ".", 15, y, 1);
-      tft.drawString(name, 30, y, 1);
+      tft.drawString(name, 10, y, 1);
+      tft.drawString(mac + " " + mfr, 10, y + 11, 1);
       
-      // RSSI bar
+      // RSSI with bar
       int rssiVal = devices[i].rssi;
-      int barX = SCREEN_WIDTH - 80;
-      int barW = 55;
+      String rssiStr = String(rssiVal) + "dB";
+      int barX = SCREEN_WIDTH - 90;
+      int barW = 70;
       int barH = 6;
-      int filledW = map(abs(rssiVal), 30, 90, 0, barW);
-      tft.fillRoundRect(barX, y + 2, barW, barH, 1, 0x303030);
-      tft.fillRoundRect(barX, y + 2, filledW, barH, 1, 0x00E5FF);
+      int rssiAbs = abs(rssiVal);
+      int filledW = map(rssiAbs, 30, 90, 0, barW);
       
-      // Tap to view details
+      tft.drawString(rssiStr, barX - 45, y, 1);
+      tft.fillRoundRect(barX, y + 1, barW, barH, 1, 0x303030);
+      tft.fillRoundRect(barX, y + 1, filledW, barH, 1, 0x00E5FF);
     }
   }
   
@@ -509,10 +557,10 @@ void requestScanRsp() {
 
 // Show results after scan completes
 void showBtResults() {
-  // Sort devices by RSSI (strongest first)
+  // Sort devices by RSSI (strongest first = most negative RSSI values first)
   for (int i = 0; i < deviceCount - 1; i++) {
     for (int j = i + 1; j < deviceCount; j++) {
-      if (devices[j].rssi > devices[i].rssi) {
+      if (devices[j].rssi < devices[i].rssi) {  // More negative = stronger
         DeviceInfo temp = devices[i];
         devices[i] = devices[j];
         devices[j] = temp;
@@ -542,8 +590,8 @@ void performBtScan() {
   
   drawBtScanning();
   
-  // Scan for 5 seconds
-  BLEScanResults* results = pBLEScan->start(5, false);
+  // Scan for 10 seconds
+  BLEScanResults* results = pBLEScan->start(10, false);
   
   // Stop scanning
   pBLEScan->stop();

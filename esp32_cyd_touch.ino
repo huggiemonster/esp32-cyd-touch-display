@@ -141,7 +141,11 @@ const ManufacturerInfo manufacturers[MANUFACTURER_COUNT] = {
 // ===== BLE Callbacks =====
 class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    if (btState != BT_SCANNING) return;
+    // During scan, only collect data
+    // During name resolution phase, allow name updates from SCAN_RSP
+    bool isScanning = (btState == BT_SCANNING);
+    bool isResolving = (btState == BT_SHOWING_RESULTS);
+    if (!isScanning && !isResolving) return;
     
     // Check if we already have MAX_DEVICES
     if (deviceCount >= MAX_DEVICES) return;
@@ -159,7 +163,7 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       mac = normalized;
     }
     
-    // Get name (default to "Unknown" if empty)
+    // Get name from this packet (SCAN_RSP often has names when advertising doesn't)
     String name = advertisedDevice.getName();
     if (name.length() == 0) name = "Unknown";
     
@@ -172,6 +176,11 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         // Update with stronger RSSI (more negative is stronger)
         if (rssi < devices[i].rssi) {
           devices[i].rssi = rssi;
+        }
+        // If this device had no name yet, take the name from this packet
+        // SCAN_RSP packets often carry the name when the initial advertising packet doesn't
+        if (name != "Unknown" && devices[i].name == "Unknown") {
+          devices[i].name = name;
         }
         break;
       }

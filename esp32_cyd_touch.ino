@@ -294,6 +294,7 @@ void resolveDeviceNames() {
     }
     
     // connect(address, type, timeoutMS) - 3 args, not 4
+    BLEAddress addr(devices[i].macAddress.c_str(), BLE_ADDR_TYPE_PUBLIC);
     bool connected = pClient->connect(addr, BLE_ADDR_TYPE_PUBLIC, 5000);
     
     if (!connected) {

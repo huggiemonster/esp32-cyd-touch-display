@@ -47,6 +47,7 @@ ScreenState currentScreen = SCREEN_MAIN_MENU;
 // ===== BT SCANNER STATE =====
 enum BtScanState {
   BT_IDLE = 0,
+  BT_READY,          // Scanner screen ready, waiting for user to press Start
   BT_SCANNING,
   BT_SHOWING_RESULTS,
   BT_SHOWING_DEVICE
@@ -352,13 +353,29 @@ bool isTouchOnBackButton(int tx, int ty) {
 
 // ===== SUB-PROGRAM SCREENS =====
 
+// Draw BT scanner - ready state (waiting for user to press Start)
+void drawBtReady() {
+  tft.fillScreen(0x000000);
+  tft.setTextColor(0xFFFFFF);
+  tft.setTextDatum(TC_DATUM);
+  tft.drawCentreString("BLE Scanner", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50, 2);
+  tft.drawCentreString("Tap Start to begin scan", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, 2);
+  drawBackButton();
+  
+  // Draw Start button
+  tft.fillRoundRect(SCREEN_WIDTH/2 - 70, SCREEN_HEIGHT/2 + 30, 140, 45, 8, 0x00E5FF);
+  tft.setTextColor(0x000000);
+  tft.drawCentreString("START", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 52, 2);
+}
+
 // Draw BT scanner - scanning state
 void drawBtScanning() {
   tft.fillScreen(0x000000);
   tft.setTextColor(0xFFFFFF);
   tft.setTextDatum(TC_DATUM);
-  tft.drawCentreString("Scanning...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 20, 2);
-  tft.drawCentreString("BLE devices nearby", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 20, 2);
+  tft.drawCentreString("Scanning...", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, 2);
+  tft.drawCentreString("Tap to stop", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, 2);
+  tft.drawCentreString(String(deviceCount) + " devices found", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40, 2);
   drawBackButton();
 }
 
@@ -370,6 +387,42 @@ void drawBtResults() {
   tft.drawCentreString("Devices Found", SCREEN_WIDTH/2, 8, 2);
   tft.drawCentreString(String(deviceCount) + " devices", SCREEN_WIDTH/2, 25, 2);
   drawBackButton();
+  
+  if (deviceCount == 0) {
+    tft.drawCentreString("No devices found.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 10, 2);
+    tft.drawCentreString("Try again later.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 15, 2);
+  } else {
+    // Draw device list (scrollable)
+    int startY = 45;
+    int lineHeight = 20;
+    int visibleLines = (SCREEN_HEIGHT - startY - 60) / lineHeight;
+    
+    for (int i = 0; i < deviceCount && i < visibleLines; i++) {
+      int y = startY + i * lineHeight;
+      
+      // Device name
+      String name = devices[i].name;
+      if (name.length() > 20) name = name.substring(0, 20) + "...";
+      if (name.length() == 0 || name == "Unknown Device" || name == "Unknown") {
+        name = "Unknown";
+      }
+      
+      tft.setTextDatum(ML_DATUM);
+      tft.drawString(String(i + 1) + ".", 15, y, 1);
+      tft.drawString(name, 30, y, 1);
+      
+      // RSSI bar
+      int rssiVal = devices[i].rssi;
+      int barX = SCREEN_WIDTH - 80;
+      int barW = 55;
+      int barH = 6;
+      int filledW = map(abs(rssiVal), 30, 90, 0, barW);
+      tft.fillRoundRect(barX, y + 2, barW, barH, 1, 0x303030);
+      tft.fillRoundRect(barX, y + 2, filledW, barH, 1, 0x00E5FF);
+      
+      // Tap to view details
+    }
+  }
   
   // Draw start scan button at bottom
   tft.fillRoundRect(50, SCREEN_HEIGHT - 50, SCREEN_WIDTH - 100, 40, 5, 0x00E5FF);
@@ -492,23 +545,8 @@ void requestScanRsp() {
   // The scan callback in onResult already handles merging data
 }
 
-// Perform a BLE scan
-void performBtScan() {
-  btState = BT_SCANNING;
-  deviceCount = 0;
-  
-  BLEDevice::init("");
-  BLEScan* pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setActiveScan(true); // Active scan to get SCAN_RSP
-  pBLEScan->setInterval(100);
-  pBLEScan->setWindow(99);
-  
-  drawBtScanning();
-  
-  // Scan for 10 seconds
- BLEScanResults* results = pBLEScan->start(10, false);
-  
+// Show results after scan completes
+void showBtResults() {
   // Sort devices by RSSI (strongest first)
   for (int i = 0; i < deviceCount - 1; i++) {
     for (int j = i + 1; j < deviceCount; j++) {
@@ -523,13 +561,39 @@ void performBtScan() {
   totalDevices = deviceCount;
   currentDeviceIndex = 0;
   
-  if (deviceCount > 0) {
-    btState = BT_SHOWING_RESULTS;
-    drawBtResults();
-  } else {
-    btState = BT_IDLE;
-    drawMainMenu();
-  }
+  // Always show results screen (even if 0 devices)
+  btState = BT_SHOWING_RESULTS;
+  drawBtResults();
+}
+
+// Perform a BLE scan
+void performBtScan() {
+  btState = BT_SCANNING;
+  deviceCount = 0;
+  
+  BLEDevice::init("");
+  BLEScan* pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setActiveScan(true);
+  pBLEScan->setInterval(100);
+  pBLEScan->setWindow(99);
+  
+  drawBtScanning();
+  
+  // Scan for 5 seconds
+  BLEScanResults* results = pBLEScan->start(5, false);
+  
+  // Stop scanning
+  pBLEScan->stop();
+  
+  showBtResults();
+}
+
+// Stop scanning and show results (called when user taps to stop)
+void stopBtScan() {
+  BLEScan* pBLEScan = BLEDevice::getScan();
+  pBLEScan->stop();
+  showBtResults();
 }
 
 // ===== MAIN LOOP =====
@@ -573,8 +637,9 @@ void loop() {
             
             switch (i) {
               case 0: // BT Scanner
-                performBtScan();
+                btState = BT_READY;
                 currentScreen = SCREEN_BT_SCANNER;
+                drawBtReady();
                 break;
               case 1: // BMS
                 currentScreen = SCREEN_BMS;
@@ -601,15 +666,30 @@ void loop() {
         if (isTouchOnBackButton(tx, ty)) {
           currentScreen = SCREEN_MAIN_MENU;
           btState = BT_IDLE;
+          deviceCount = 0;
           drawMainMenu();
           break;
         }
         
         switch (btState) {
-          case BT_SCANNING:
-            // Do nothing during scan
+          case BT_READY: {
+            // Check if user tapped the START button
+            int btnCenterX = SCREEN_WIDTH / 2;
+            int btnCenterY = SCREEN_HEIGHT / 2 + 52;
+            int btnH = 45;
+            if (tx > btnCenterX - 75 && tx < btnCenterX + 75 && 
+                ty > btnCenterY - btnH/2 && ty < btnCenterY + btnH/2) {
+              performBtScan();
+            }
             break;
-            
+          }
+          
+          case BT_SCANNING: {
+            // Tap to stop scan early
+            stopBtScan();
+            break;
+          }
+          
           case BT_SHOWING_RESULTS: {
             // Check scan again button at bottom
             if (ty > SCREEN_HEIGHT - 50 && tx > 50 && tx < SCREEN_WIDTH - 50) {
@@ -620,14 +700,17 @@ void loop() {
           
           case BT_SHOWING_DEVICE: {
             // Check prev button
-            if (currentDeviceIndex > 0 && tx >= 10 && tx <= 80 && ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
+            if (currentDeviceIndex > 0 && tx >= 10 && tx <= 80 && 
+                ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
               currentDeviceIndex--;
               drawBtDevice(currentDeviceIndex);
               break;
             }
             
             // Check next button
-            if (currentDeviceIndex < deviceCount - 1 && tx >= SCREEN_WIDTH - 80 && tx <= SCREEN_WIDTH - 10 && ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
+            if (currentDeviceIndex < deviceCount - 1 && 
+                tx >= SCREEN_WIDTH - 80 && tx <= SCREEN_WIDTH - 10 && 
+                ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
               currentDeviceIndex++;
               drawBtDevice(currentDeviceIndex);
               break;

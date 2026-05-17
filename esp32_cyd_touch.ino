@@ -177,6 +177,17 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     Serial.print("\" rssi=");
     Serial.println(advertisedDevice.getRSSI());
     
+    // Check what raw data is available
+    String advData = advertisedDevice.getAdvertisingData();
+    Serial.print("[BLE]   raw_adv_len=");
+    Serial.print(advData.length());
+    Serial.print(" service_uuids=");
+    Serial.print(advertisedDevice.getServiceUUID());
+    Serial.print(" appearance=");
+    Serial.print(advertisedDevice.getAppearance());
+    Serial.print(" txPower=");
+    Serial.print(advertisedDevice.getTXPower());
+    
     // Find or add device (dedup by MAC)
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {

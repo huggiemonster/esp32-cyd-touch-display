@@ -315,8 +315,9 @@ void resolveDeviceNames() {
     if (pSvc) {
       NimBLERemoteCharacteristic* pChar = pSvc->getCharacteristic(NimBLEUUID("0x2A00"));
       if (pChar && pChar->canRead()) {
-        std::string nameStr = pChar->readValue<std::string>();
-        if (nameStr.length() > 0) {
+        NimBLEAttValue value = pChar->readValue();
+        if (value.size() > 0) {
+          std::string nameStr(reinterpret_cast<const char*>(value.data()), value.size());
           String newName = String(nameStr.c_str());
           Serial.print("[BLE] CONNECT RESOLVED: ");
           Serial.println(newName);

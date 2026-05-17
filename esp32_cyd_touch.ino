@@ -143,57 +143,20 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
     if (btState != BT_SCANNING) return;
     
-    // Get MAC address
-    String mac = advertisedDevice.getAddress().toString().c_str();
+    // Check if we already have MAX_DEVICES
+    if (deviceCount >= MAX_DEVICES) return;
     
-    // Get name from advertising data
+    // Get MAC address
+    String mac = advertisedDevice.getAddress().toString();
+    
+    // Get name (default to "Unknown" if empty)
     String name = advertisedDevice.getName();
-    if (name == "" || name == "Unknown") name = "Unknown Device";
-    String completeName = name;
+    if (name.length() == 0) name = "Unknown";
     
     // Get RSSI
     int rssi = advertisedDevice.getRSSI();
     
-    // Get manufacturer data
-    String mfrData = advertisedDevice.getManufacturerData();
-    String manufacturer = "Unknown";
-    String mfrId = "N/A";
-    if (mfrData.length() >= 2) {
-      uint16_t id = (uint8_t)mfrData[1] | ((uint8_t)mfrData[0] << 8);
-      mfrId = "0x" + String(id, HEX);
-      
-      // Lookup manufacturer name
-      for (int i = 0; i < MANUFACTURER_COUNT; i++) {
-        if (manufacturers[i].id == id) {
-          manufacturer = manufacturers[i].name;
-          break;
-        }
-      }
-    }
-    
-    // Get service UUIDs
-    String uuids = "";
-    if (advertisedDevice.haveServiceUUID()) {
-      BLEUUID serviceUuid = advertisedDevice.getServiceUUID();
-      uuids = serviceUuid.toString().c_str();
-    }
-    
-    // Get TX Power (some NimBLE versions support getTXPower())
-    String txPower = "";
-    if (advertisedDevice.getTXPower() != 127) { // 127 means not available
-      txPower = String(advertisedDevice.getTXPower()) + " dBm";
-    }
-    
-    // Get appearance
-    String appearance = "";
-    if (advertisedDevice.haveAppearance()) {
-      appearance = "0x" + String(advertisedDevice.getAppearance(), HEX);
-    }
-    
-    // Advertising interval not directly available via NimBLE API
-    String advInterval = "";
-    
-    // Store device if not already in list
+    // Find or add device
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
       if (devices[i].macAddress == mac) {
@@ -201,24 +164,23 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         if (rssi > devices[i].rssi) {
           devices[i].rssi = rssi;
         }
-        if (completeName.length() > 0 && name.length() == 0) {
-          name = completeName;
+        if (name != "Unknown" && devices[i].name == "Unknown") {
+          devices[i].name = name;
         }
-        devices[i].name = name;
         break;
       }
     }
     
-    if (!found && deviceCount < MAX_DEVICES) {
+    if (!found) {
       devices[deviceCount].name = name;
       devices[deviceCount].macAddress = mac;
       devices[deviceCount].rssi = rssi;
-      devices[deviceCount].manufacturer = manufacturer;
-      devices[deviceCount].manufacturerId = mfrId;
-      devices[deviceCount].serviceUuids = uuids;
-      devices[deviceCount].txPower = txPower;
-      devices[deviceCount].appearance = appearance;
-      devices[deviceCount].advInterval = advInterval;
+      devices[deviceCount].manufacturer = "Unknown";
+      devices[deviceCount].manufacturerId = "N/A";
+      devices[deviceCount].serviceUuids = "";
+      devices[deviceCount].txPower = "";
+      devices[deviceCount].appearance = "";
+      devices[deviceCount].advInterval = "";
       devices[deviceCount].hasScanRsp = false;
       deviceCount++;
     }

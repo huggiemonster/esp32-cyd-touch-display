@@ -356,7 +356,7 @@ ManufacturerInfo manufacturers[] = {
   {0x0110, "Ztoic Tech"},
   {0x0111, "Sena Technologies Inc."},
   {0x0112, "SmartSensor Labs Ltd"},
-  {0x0113, "Akciju sabiedriba "SAFATECH""},
+{0x0113, "Akciju sabiedriba SAFATECH"},
   {0x0114, "Kartographers Technologies Pvt. Ltd."},
   {0x0115, "Valeo Service"},
   {0x0116, "NIDEC MOTOR CORPORATION"},
@@ -767,7 +767,7 @@ ManufacturerInfo manufacturers[] = {
   {0x02AB, "Direct Communication Solutions, Inc."},
   {0x02AC, "Ubiquitous Computing Technology Corporation"},
   {0x02AD, "Plus One Innovation"},
-  {0x02AE, "VMAP"),
+  {0x02AE, "VMAP"},
   {0x02AF, "Square Panda, Inc."},
   {0x02B0, "Myzee Technology"},
   {0x02B1, "Melange Systems Pvt. Ltd."},
@@ -830,7 +830,7 @@ ManufacturerInfo manufacturers[] = {
   {0x02EA, "Tricorder Arraay Technologies LLC"},
   {0x02EB, "Aclara LLC"},
   {0x02EC, "Kohler Company"},
-  {0x02ED},
+  {0x02ED, "Unknown"},
   {0x02EE, "Mammut Networks AG"},
   {0x02EF, "Vocera Communications"},
   {0x02F0, "StarLeaf Ltd"},
@@ -864,7 +864,7 @@ ManufacturerInfo manufacturers[] = {
   {0x030C, "Channel Systems Inc"},
   {0x030D, "NITTO KOGYO"},
   {0x030E, "SENNHEISER"},
-  {0x030F, "cisco},
+  {0x030F, "Cisco"},
   {0x0310, "iHealth Labs"},
   {0x0311, "TCL Connected Technologies"},
   {0x0312, "OJ Electronics"},
@@ -1118,14 +1118,15 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     String mac = advertisedDevice.getAddress().toString().c_str();
     
     // Get name from advertising data
-    String name = advertisedDevice.getName().c_str();
-    String completeName = advertisedDevice.getAdvertisingData().getText(0x09).c_str(); // Complete Local Name
+    String name = advertisedDevice.getName();
+    if (name == "" || name == "Unknown") name = "Unknown Device";
+    String completeName = name;
     
     // Get RSSI
     int rssi = advertisedDevice.getRSSI();
     
     // Get manufacturer data
-    String mfrData = advertisedDevice.getAdvertisingData().getData(0xFF); // Manufacturer Specific Data
+    String mfrData = advertisedDevice.getManufacturerData();
     String manufacturer = "Unknown";
     String mfrId = "N/A";
     if (mfrData.length() >= 2) {
@@ -1143,21 +1144,25 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     
     // Get service UUIDs
     String uuids = "";
-    auto uuidList = advertisedDevice.getAdvertisingData().getUUIDs();
-    for (int i = 0; i < uuidList.size() && i < 5; i++) {
-      if (i > 0) uuids += ", ";
-      uuids += "0x" + uuidList[i].toString().c_str();
+    if (advertisedDevice.haveServiceUUID()) {
+      BLEUUID serviceUuid = advertisedDevice.getServiceUUID();
+      uuids = serviceUuid.toString().c_str();
     }
-    if (uuidList.size() > 5) uuids += ", ...";
     
-    // Get TX Power
-    String txPower = advertisedDevice.getAdvertisingData().getText(0x0A); // TX Power Level
+    // Get TX Power (some NimBLE versions support getTXPower())
+    String txPower = "";
+    if (advertisedDevice.getTXPower() != 127) { // 127 means not available
+      txPower = String(advertisedDevice.getTXPower()) + " dBm";
+    }
     
     // Get appearance
-    String appearance = advertisedDevice.getAdvertisingData().getData(0x19);
+    String appearance = "";
+    if (advertisedDevice.haveAppearance()) {
+      appearance = "0x" + String(advertisedDevice.getAppearance(), HEX);
+    }
     
-    // Get advertising interval
-    String advInterval = advertisedDevice.getAdvertisingData().getData(0x18);
+    // Advertising interval not directly available via NimBLE API
+    String advInterval = "";
     
     // Store device if not already in list
     bool found = false;
@@ -1474,7 +1479,7 @@ void performBtScan() {
   drawBtScanning();
   
   // Scan for 10 seconds
-  BLEScanResults results = pBLEScan->start(10, false);
+ BLEScanResults* results = pBLEScan->start(10, false);
   
   // Sort devices by RSSI (strongest first)
   for (int i = 0; i < deviceCount - 1; i++) {

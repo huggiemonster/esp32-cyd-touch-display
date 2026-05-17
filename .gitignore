@@ -1,0 +1,20 @@
+# Arduino IDE
+*.ini
+*.bin
+*.jar
+*.class
+*.[dD][lL][mM]
+*.pyc
+
+# PlatformIO
+.platformio/
+*.elf
+*.map
+*.bin
+*.jpg
+*.png
+*.ico
+
+# Generated files
+*.[eE][lL][fF]
+*.[mM][aA][pP]

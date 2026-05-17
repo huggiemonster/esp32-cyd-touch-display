@@ -159,12 +159,11 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       mac = normalized;
     }
     
-    // Get name - prioritize scan response name over advertising name
-    // Many BLE devices only include name in SCAN_RSP
+    // Get name (default to "Unknown" if empty)
     String name = advertisedDevice.getName();
     if (name.length() == 0) name = "Unknown";
     
-    // If this is a scan response, update name if we already have the device
+    // Find or add device (dedup by MAC)
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
       if (devices[i].macAddress == mac) {
@@ -173,10 +172,6 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         // Update with stronger RSSI (more negative is stronger)
         if (rssi < devices[i].rssi) {
           devices[i].rssi = rssi;
-        }
-        // If this is a scan response AND current name is Unknown, update it
-        if (advertisedDevice.scanResponse && name != "Unknown" && devices[i].name == "Unknown") {
-          devices[i].name = name;
         }
         break;
       }
@@ -192,11 +187,25 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       devices[deviceCount].txPower = "";
       devices[deviceCount].appearance = "";
       devices[deviceCount].advInterval = "";
-      devices[deviceCount].hasScanRsp = advertisedDevice.scanResponse;
+     devices[deviceCount].hasScanRsp = false;
       deviceCount++;
     }
   }
 };
+
+// ===== Post-Scan Name Resolution =====
+// Many BLE devices only broadcast their name in SCAN_RSP, which arrives
+// separately from the initial advertising packet. We do a second passive
+// scan (1s) focused on known devices to resolve their names.
+void resolveDeviceNames() {
+  BLEScan* pScan = BLEDevice::getScan();
+  pScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pScan->setActiveScan(true);
+  pScan->setInterval(100);
+  pScan->setWindow(99);
+  pScan->start(1, false);  // 1 second focused scan
+  pScan->stop();
+}
 
 // ===== UI Drawing Functions =====
 
@@ -543,6 +552,9 @@ void requestScanRsp() {
 
 // Show results after scan completes
 void showBtResults() {
+  // Resolve device names from SCAN_RSP (many devices only broadcast name here)
+  resolveDeviceNames();
+  
   // Sort devices by RSSI (strongest first = most negative RSSI values first)
   for (int i = 0; i < deviceCount - 1; i++) {
     for (int j = i + 1; j < deviceCount; j++) {

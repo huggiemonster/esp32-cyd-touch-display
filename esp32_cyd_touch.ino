@@ -173,20 +173,9 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     Serial.print(" ");
     Serial.print(mac);
     Serial.print(" name=\"");
-    Serial.print(name);
+    Serial.print(name.c_str());
     Serial.print("\" rssi=");
     Serial.println(advertisedDevice.getRSSI());
-    
-    // Check what raw data is available
-    String advData = advertisedDevice.getAdvertisingData();
-    Serial.print("[BLE]   raw_adv_len=");
-    Serial.print(advData.length());
-    Serial.print(" service_uuids=");
-    Serial.print(advertisedDevice.getServiceUUID());
-    Serial.print(" appearance=");
-    Serial.print(advertisedDevice.getAppearance());
-    Serial.print(" txPower=");
-    Serial.print(advertisedDevice.getTXPower());
     
     // Find or add device (dedup by MAC)
     bool found = false;
@@ -245,9 +234,9 @@ void resolveDeviceNames() {
   pScan->setActiveScan(true);
   pScan->setInterval(100);
   pScan->setWindow(99);
-  pScan->start(1, false);  // 1 second focused scan
+  pScan->start(1, false);  // 1 second active scan, auto-stops
+  delay(1100);              // Wait for scan to complete
   Serial.println("[BLE] Resolve scan complete");
-  pScan->stop();
 }
 
 // ===== UI Drawing Functions =====

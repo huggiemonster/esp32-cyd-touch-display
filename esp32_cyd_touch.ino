@@ -166,24 +166,6 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     // Get RSSI
     int rssi = advertisedDevice.getRSSI();
     
-    // Get manufacturer data safely (extract ID only, don't store raw data)
-    String mfrData = advertisedDevice.getManufacturerData();
-    String manufacturer = "Unknown";
-    String mfrId = "N/A";
-    if (mfrData.length() >= 2) {
-      // Extract first 2 bytes as manufacturer ID (little-endian)
-      uint16_t id = (uint8_t)mfrData[1] | ((uint8_t)mfrData[0] << 8);
-      mfrId = "0x" + String(id, HEX);
-      
-      // Lookup manufacturer name from table
-      for (int i = 0; i < MANUFACTURER_COUNT; i++) {
-        if (manufacturers[i].id == id) {
-          manufacturer = manufacturers[i].name;
-          break;
-        }
-      }
-    }
-    
     // Find or add device (dedup by MAC)
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
@@ -197,11 +179,6 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         if (name != "Unknown" && devices[i].name == "Unknown") {
           devices[i].name = name;
         }
-        // Update manufacturer info
-        if (mfrId != "N/A") {
-          devices[i].manufacturerId = mfrId;
-          devices[i].manufacturer = manufacturer;
-        }
         break;
       }
     }
@@ -210,8 +187,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       devices[deviceCount].name = name;
       devices[deviceCount].macAddress = mac;
       devices[deviceCount].rssi = rssi;
-      devices[deviceCount].manufacturer = manufacturer;
-      devices[deviceCount].manufacturerId = mfrId;
+      devices[deviceCount].manufacturer = "";
+      devices[deviceCount].manufacturerId = "";
       devices[deviceCount].serviceUuids = "";
       devices[deviceCount].txPower = "";
       devices[deviceCount].appearance = "";
@@ -405,19 +382,15 @@ void drawBtResults() {
         name = name.substring(0, 18);
       }
       
-      // MAC address + manufacturer (bottom line)
+      // MAC address (bottom line)
       String mac = devices[i].macAddress;
       if (mac.length() > 12) {
         mac = mac.substring(mac.length() - 12);  // Show last 12 chars (xx:xx:xx)
       }
-      String mfr = devices[i].manufacturerId;
-      if (mfr != "N/A" && mfr != "") {
-        mfr = mfr.substring(4);  // Remove "0x" prefix
-      }
       
       tft.setTextDatum(ML_DATUM);
       tft.drawString(name, 10, y, 1);
-      tft.drawString(mac + " " + mfr, 10, y + 11, 1);
+      tft.drawString(mac, 10, y + 11, 1);
       
       // RSSI with bar
       int rssiVal = devices[i].rssi;

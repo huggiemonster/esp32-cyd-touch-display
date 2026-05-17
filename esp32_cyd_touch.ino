@@ -159,24 +159,23 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       mac = normalized;
     }
     
-    // Get name (default to "Unknown" if empty)
+    // Get name - prioritize scan response name over advertising name
+    // Many BLE devices only include name in SCAN_RSP
     String name = advertisedDevice.getName();
     if (name.length() == 0) name = "Unknown";
     
-    // Get RSSI
-    int rssi = advertisedDevice.getRSSI();
-    
-    // Find or add device (dedup by MAC)
+    // If this is a scan response, update name if we already have the device
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
       if (devices[i].macAddress == mac) {
         found = true;
-        // Update with stronger RSSI (more negative is stronger, so use <)
+        int rssi = advertisedDevice.getRSSI();
+        // Update with stronger RSSI (more negative is stronger)
         if (rssi < devices[i].rssi) {
           devices[i].rssi = rssi;
         }
-        // Update name if we got one
-        if (name != "Unknown" && devices[i].name == "Unknown") {
+        // If this is a scan response AND current name is Unknown, update it
+        if (advertisedDevice.scanResponse && name != "Unknown" && devices[i].name == "Unknown") {
           devices[i].name = name;
         }
         break;
@@ -186,14 +185,14 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     if (!found) {
       devices[deviceCount].name = name;
       devices[deviceCount].macAddress = mac;
-      devices[deviceCount].rssi = rssi;
+      devices[deviceCount].rssi = advertisedDevice.getRSSI();
       devices[deviceCount].manufacturer = "";
       devices[deviceCount].manufacturerId = "";
       devices[deviceCount].serviceUuids = "";
       devices[deviceCount].txPower = "";
       devices[deviceCount].appearance = "";
       devices[deviceCount].advInterval = "";
-      devices[deviceCount].hasScanRsp = false;
+      devices[deviceCount].hasScanRsp = advertisedDevice.scanResponse;
       deviceCount++;
     }
   }
@@ -353,64 +352,78 @@ void drawBtScanning() {
   drawBackButton();
 }
 
-// Draw BT scanner - device list
+// Draw BT scanner - single device card (one item per page)
 void drawBtResults() {
   tft.fillScreen(0x000000);
   tft.setTextColor(0xFFFFFF);
   tft.setTextDatum(TC_DATUM);
   tft.drawCentreString("Devices Found", SCREEN_WIDTH/2, 8, 2);
-  tft.drawCentreString(String(deviceCount) + " devices", SCREEN_WIDTH/2, 25, 2);
   drawBackButton();
   
   if (deviceCount == 0) {
     tft.drawCentreString("No devices found.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 10, 2);
     tft.drawCentreString("Try again later.", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, 2);
-  } else {
-    // Draw device list with name, MAC, manufacturer + RSSI info
-    int startY = 40;
-    int lineHeight = 22;
-    int visibleLines = (SCREEN_HEIGHT - startY - 55) / lineHeight;
-    
-    for (int i = 0; i < deviceCount && i < visibleLines; i++) {
-      int y = startY + i * lineHeight;
-      
-      // Device name (top line)
-      String name = devices[i].name;
-      if (name.length() == 0 || name == "Unknown" || name == "Unknown Device") {
-        name = "Unknown";
-      } else if (name.length() > 18) {
-        name = name.substring(0, 18);
-      }
-      
-      // MAC address (bottom line)
-      String mac = devices[i].macAddress;
-      if (mac.length() > 12) {
-        mac = mac.substring(mac.length() - 12);  // Show last 12 chars (xx:xx:xx)
-      }
-      
-      tft.setTextDatum(ML_DATUM);
-      tft.drawString(name, 10, y, 1);
-      tft.drawString(mac, 10, y + 11, 1);
-      
-      // RSSI with bar
-      int rssiVal = devices[i].rssi;
-      String rssiStr = String(rssiVal) + "dB";
-      int barX = SCREEN_WIDTH - 90;
-      int barW = 70;
-      int barH = 6;
-      int rssiAbs = abs(rssiVal);
-      int filledW = map(rssiAbs, 30, 90, 0, barW);
-      
-      tft.drawString(rssiStr, barX - 45, y, 1);
-      tft.fillRoundRect(barX, y + 1, barW, barH, 1, 0x303030);
-      tft.fillRoundRect(barX, y + 1, filledW, barH, 1, 0x00E5FF);
-    }
+    return;
   }
   
-  // Draw start scan button at bottom
-  tft.fillRoundRect(50, SCREEN_HEIGHT - 50, SCREEN_WIDTH - 100, 40, 5, 0x00E5FF);
-  tft.setTextColor(0x000000);
-  tft.drawCentreString("Scan Again", SCREEN_WIDTH/2, SCREEN_HEIGHT - 30, 2);
+  // Current device card
+  int idx = currentDeviceIndex;
+  String name = devices[idx].name;
+  String mac = devices[idx].macAddress;
+  int rssiVal = devices[idx].rssi;
+  
+  if (name.length() == 0 || name == "Unknown" || name == "Unknown Device") {
+    name = "Unknown";
+  }
+  
+  // Device icon (centered)
+  tft.fillCircle(SCREEN_WIDTH/2, 55, 25, 0x00E5FF);
+  tft.fillTriangle(SCREEN_WIDTH/2, 40, SCREEN_WIDTH/2 + 12, 60, SCREEN_WIDTH/2 - 12, 60, 0x000000);
+  tft.fillTriangle(SCREEN_WIDTH/2, 70, SCREEN_WIDTH/2 + 12, 50, SCREEN_WIDTH/2 - 12, 50, 0x000000);
+  
+  // Device name
+  if (name.length() > 22) name = name.substring(0, 22) + "..";
+  tft.setTextColor(0x00E5FF);
+  tft.drawCentreString(name, SCREEN_WIDTH/2, 95, 2);
+  
+  // MAC address
+  tft.setTextColor(0xAAAAAA);
+  tft.drawCentreString(mac, SCREEN_WIDTH/2, 125, 1);
+  
+  // RSSI display
+  tft.setTextColor(0xFFFFFF);
+  tft.drawCentreString(String(rssiVal) + " dBm", SCREEN_WIDTH/2, 150, 2);
+  
+  // RSSI bar
+  int rssiAbs = abs(rssiVal);
+  int barW = 200;
+  int filledW = map(rssiAbs, 30, 90, 0, barW);
+  tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 175, barW, 8, 4, 0x303030);
+  tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 175, filledW, 8, 4, 0x00E5FF);
+  
+  // Page indicator
+  tft.setTextColor(0x808080);
+  tft.drawCentreString(String(idx + 1) + "/" + String(deviceCount), SCREEN_WIDTH/2, 195, 1);
+  
+  // Navigation bar
+  tft.fillRoundRect(0, SCREEN_HEIGHT - 45, SCREEN_WIDTH, 45, 5, 0x202020);
+  
+  // Previous button
+  bool canPrev = idx > 0;
+  int prevX = 10;
+  tft.fillRoundRect(prevX, SCREEN_HEIGHT - 40, 70, 35, 5, canPrev ? 0x404040 : 0x202020);
+  tft.setTextColor(canPrev ? 0xFFFFFF : 0x808080);
+  tft.drawCentreString("< Prev", prevX + 35, SCREEN_HEIGHT - 22, 2);
+  
+  // Next button
+  bool canNext = idx < deviceCount - 1;
+  int nextX = SCREEN_WIDTH - 80;
+  tft.fillRoundRect(nextX, SCREEN_HEIGHT - 40, 70, 35, 5, canNext ? 0x404040 : 0x202020);
+  tft.setTextColor(canNext ? 0xFFFFFF : 0x808080);
+  tft.drawCentreString("Next >", nextX + 35, SCREEN_HEIGHT - 22, 2);
+  
+  // Tap device card area to see details
+  tft.drawCentreString("Tap device for details", SCREEN_WIDTH/2, 215, 1);
 }
 
 // Draw BT scanner - single device detail
@@ -674,9 +687,27 @@ void loop() {
           }
           
           case BT_SHOWING_RESULTS: {
-            // Check scan again button at bottom
-            if (ty > SCREEN_HEIGHT - 50 && tx > 50 && tx < SCREEN_WIDTH - 50) {
-              performBtScan();
+            // Check prev button
+            if (currentDeviceIndex > 0 && tx >= 10 && tx <= 80 && 
+                ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
+              currentDeviceIndex--;
+              drawBtResults();
+              break;
+            }
+            
+            // Check next button
+            if (currentDeviceIndex < deviceCount - 1 && 
+                tx >= SCREEN_WIDTH - 80 && tx <= SCREEN_WIDTH - 10 && 
+                ty >= SCREEN_HEIGHT - 40 && ty <= SCREEN_HEIGHT - 5) {
+              currentDeviceIndex++;
+              drawBtResults();
+              break;
+            }
+            
+            // Tap on device card (center area) to see details
+            if (tx > 30 && tx < SCREEN_WIDTH - 30 && ty > 30 && ty < 200) {
+              btState = BT_SHOWING_DEVICE;
+              drawBtDevice(currentDeviceIndex);
             }
             break;
           }

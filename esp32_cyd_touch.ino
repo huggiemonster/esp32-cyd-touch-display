@@ -15,6 +15,7 @@
 #include <BLEUtils.h>
 #include <BLEScan.h>
 #include <BLEAdvertisedDevice.h>
+#include <string.h>
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -139,6 +140,183 @@ const ManufacturerInfo manufacturers[MANUFACTURER_COUNT] = {
 
 #define MANUFACTURER_COUNT (800)
 
+// ===== BLE Ad Data Structure =====
+struct BleField {
+  uint8_t type;
+  const char* typeName;
+  uint8_t data[32];
+  uint8_t len;
+};
+
+// BLE AD Type name lookup (partial but useful)
+const char* getAdTypeName(uint8_t type) {
+  switch(type) {
+    case 0x01: return "FLAGS";
+    case 0x02: return "INCOMPLETE_16SVC";
+    case 0x03: return "COMPLETE_16SVC";
+    case 0x04: return "INCOMPLETE_32SVC";
+    case 0x05: return "COMPLETE_32SVC";
+    case 0x06: return "INCOMPLETE_128SVC";
+    case 0x07: return "COMPLETE_128SVC";
+    case 0x08: return "SHORT_NAME";
+    case 0x09: return "COMPLETE_NAME";
+    case 0x0A: return "TX_POWER";
+    case 0x0D: return "CLASS";
+    case 0x0E: return "SIMPLE_PAIRING_HASH";
+    case 0x0F: return "SIMPLE_PAIRING_RANDOMIZER";
+    case 0x16: return "SERVICE_DATA_16";
+    case 0x20: return "SERVICE_DATA_32";
+    case 0x21: return "SERVICE_DATA_128";
+    case 0x19: return "DEVICE_ID";
+    case 0x1A: return "DEVICE_ID_VER1";
+    case 0x3D: return "3D_INFO";
+    default: return "UNKNOWN";
+  }
+}
+
+// Decode a BLE AD structure from raw payload
+bool parseAdData(uint8_t* payload, size_t len, BleField* out, uint8_t maxFields) {
+  uint8_t count = 0;
+  size_t i = 0;
+  while (i < len && count < maxFields) {
+    uint8_t fieldLen = payload[i];
+    if (fieldLen == 0 || i + fieldLen >= len) break;
+    uint8_t adType = payload[i + 1];
+    out[count].type = adType;
+    out[count].typeName = getAdTypeName(adType);
+    uint8_t dataLen = fieldLen - 1;
+    if (dataLen > 32) dataLen = 32;
+    memcpy(out[count].data, payload + i + 2, dataLen);
+    out[count].len = dataLen;
+    count++;
+    i += fieldLen + 1;
+  }
+  return count > 0;
+}
+
+// Hex dump helper
+void hexDump(uint8_t* data, uint8_t len) {
+  for (uint8_t i = 0; i < len; i++) {
+    Serial.print(data[i] < 0x10 ? "0" : "");
+    Serial.print(data[i], HEX);
+    if (i < len - 1) Serial.print(" ");
+  }
+}
+
+// ===== Comprehensive BLE Device Dump =====
+void dumpBleDevice(BLEAdvertisedDevice dev, const char* phase) {
+  String mac = dev.getAddress().toString();
+  if (mac.length() == 12) {
+    String n = "";
+    for (int i = 0; i < 12; i += 2) {
+      if (i > 0) n += ":";
+      n += mac.substring(i, i+2);
+    }
+    mac = n;
+  }
+  
+  uint8_t addrType = dev.getAddressType();
+  uint8_t advType = dev.getAdvType();
+  int rssi = dev.getRSSI();
+  
+  Serial.printf("[BLE-DBG %s] MAC=%s TYPE=0x%02X RSSI=%d ADT=%d\n",
+    phase, mac.c_str(), addrType, rssi, advType);
+  
+  // Packet characteristics
+  Serial.printf("  LEGACY=%d SCANNABLE=%d CONNECTABLE=%d\n",
+    dev.isLegacyAdvertisement(), dev.isScannable(), dev.isConnectable());
+  
+  // Basic fields
+  if (dev.haveName()) {
+    Serial.printf("  NAME=\"%s\"\n", dev.getName().c_str());
+  }
+  if (dev.haveAppearance()) {
+    Serial.printf("  APPEARANCE=0x%04X (%d)\n", dev.getAppearance(), dev.getAppearance());
+  }
+  if (dev.haveTXPower()) {
+    Serial.printf("  TX_POWER=%d dBm\n", dev.getTXPower());
+  }
+  
+  // Service UUIDs
+  int svcCount = dev.getServiceUUIDCount();
+  if (svcCount > 0) {
+    Serial.printf("  SVC_UUIDS (%d):", svcCount);
+    for (int i = 0; i < svcCount; i++) {
+      Serial.printf(" %s", dev.getServiceUUID(i).toString().c_str());
+    }
+    Serial.println();
+  }
+  
+  // Manufacturer data
+  if (dev.haveManufacturerData()) {
+    String manData = dev.getManufacturerData();
+    Serial.printf("  MFR_DATA (%d bytes):", manData.length());
+    // First 2 bytes are company ID (little-endian)
+    if (manData.length() >= 2) {
+      uint16_t compId = (uint8_t)manData[1] << 8 | (uint8_t)manData[0];
+      Serial.printf(" CID=0x%04X", compId);
+      // Look up manufacturer name
+      const char* mfrName = "UNKNOWN";
+      for (int i = 0; i < MANUFACTURER_COUNT; i++) {
+        if (manufacturers[i].id == compId) { mfrName = manufacturers[i].name; break; }
+      }
+      Serial.printf(" (%s)", mfrName);
+      // Dump remaining data
+      Serial.print(" ");
+      hexDump((uint8_t*)manData.c_str() + 2, manData.length() - 2);
+    }
+    Serial.println();
+  }
+  
+  // Service data
+  int sdCount = dev.getServiceDataCount();
+  if (sdCount > 0) {
+    for (int i = 0; i < sdCount; i++) {
+      String sd = dev.getServiceData(i);
+      BLEUUID uuid = dev.getServiceDataUUID(i);
+      Serial.printf("  SVC_DATA %s (%d bytes):", uuid.toString().c_str(), sd.length());
+      hexDump((uint8_t*)sd.c_str(), sd.length());
+      Serial.println();
+    }
+  }
+  
+  // Raw payload hex dump
+  uint8_t* payload = dev.getPayload();
+  size_t payloadLen = dev.getPayloadLength();
+  if (payloadLen > 0) {
+    Serial.printf("  RAW_PAYLOAD (%d bytes):", payloadLen);
+    hexDump(payload, payloadLen);
+    Serial.println();
+    
+    // Parse and print individual AD structures
+    BleField fields[16];
+    uint8_t fieldCount = 0;
+    if (parseAdData(payload, payloadLen, fields, 16)) {
+      Serial.println("  AD STRUCTURES:");
+      for (int i = 0; i < fieldCount; i++) {
+        Serial.printf("    [%d] %-20s 0x%02X:", i, fields[i].typeName, fields[i].type);
+        hexDump(fields[i].data, fields[i].len);
+        // Try to decode common types
+        if (fields[i].type == 0x09 || fields[i].type == 0x08) {
+          // Name - print as ASCII
+          Serial.print(" \"");
+          for (uint8_t j = 0; j < fields[i].len; j++) {
+            char c = fields[i].data[j];
+            if (c >= 0x20 && c < 0x7F) Serial.print(c);
+            else Serial.print(".");
+          }
+          Serial.print("\"");
+        }
+        Serial.println();
+      }
+    }
+  }
+  
+  // toString() for reference
+  Serial.printf("  STRING=%s\n", dev.toString().c_str());
+  Serial.println();
+}
+
 // ===== BLE Callbacks =====
 class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
@@ -219,7 +397,17 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       devices[deviceCount].hasScanRsp = false;
       Serial.print("[BLE] NEW: ");
       Serial.println(name);
+      // Dump full device data for first packet (ADV)
+      dumpBleDevice(advertisedDevice, "ADV");
       deviceCount++;
+    } else {
+      // Device already seen — this is likely a SCAN_RSP packet with more data
+      // Only dump on first SCAN_RSP receipt to avoid flood
+      if (!devices[i].hasScanRsp) {
+        devices[i].hasScanRsp = true;
+        Serial.println("[BLE] Got SCAN_RSP");
+        dumpBleDevice(advertisedDevice, "RSP");
+      }
     }
   }
 };

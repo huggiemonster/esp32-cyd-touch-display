@@ -285,7 +285,7 @@ void resolveDeviceNames() {
     tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, barW, 8, 4, 0x303030);
     tft.fillRoundRect(SCREEN_WIDTH/2 - barW/2, 145, filledW, 8, 4, 0x00E5FF);
     
-    // Create client and connect
+    // Create client and connect (try public, then random)
     NimBLEClient* pClient = BLEDevice::createClient();
     if (!pClient) {
       Serial.print("[BLE] Failed to create client for: ");
@@ -293,8 +293,14 @@ void resolveDeviceNames() {
       continue;
     }
     
-    NimBLEAddress addr(devices[i].macAddress.c_str());
+    NimBLEAddress addr(devices[i].macAddress.c_str(), BLE_ADDR_PUBLIC);
     bool connected = pClient->connect(addr, false, false, false);
+    
+    if (!connected) {
+      // Try random address type
+      NimBLEAddress addrRandom(devices[i].macAddress.c_str(), BLE_ADDR_RANDOM);
+      connected = pClient->connect(addrRandom, false, false, false);
+    }
     
     if (!connected) {
       Serial.print("[BLE] Connect failed: ");
@@ -309,7 +315,7 @@ void resolveDeviceNames() {
     if (pSvc) {
       NimBLERemoteCharacteristic* pChar = pSvc->getCharacteristic(NimBLEUUID("0x2A00"));
       if (pChar && pChar->canRead()) {
-        std::string nameStr = pChar->getValue();
+        std::string nameStr = pChar->readValue<std::string>();
         if (nameStr.length() > 0) {
           String newName = String(nameStr.c_str());
           Serial.print("[BLE] CONNECT RESOLVED: ");

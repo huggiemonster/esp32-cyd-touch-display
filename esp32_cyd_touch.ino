@@ -357,9 +357,11 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     Serial.println(advertisedDevice.getRSSI());
     
     // Find or add device (dedup by MAC)
+    int matchedIdx = -1;
     bool found = false;
     for (int i = 0; i < deviceCount; i++) {
       if (devices[i].macAddress == mac) {
+        matchedIdx = i;
         found = true;
         int rssi = advertisedDevice.getRSSI();
         // Update with stronger RSSI (more negative is stronger)
@@ -403,8 +405,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     } else {
       // Device already seen — this is likely a SCAN_RSP packet with more data
       // Only dump on first SCAN_RSP receipt to avoid flood
-      if (!devices[i].hasScanRsp) {
-        devices[i].hasScanRsp = true;
+      if (matchedIdx >= 0 && !devices[matchedIdx].hasScanRsp) {
+        devices[matchedIdx].hasScanRsp = true;
         Serial.println("[BLE] Got SCAN_RSP");
         dumpBleDevice(advertisedDevice, "RSP");
       }
